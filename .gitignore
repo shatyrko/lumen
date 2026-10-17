@@ -1,0 +1,5 @@
+.venv/
+devices.json
+__pycache__/
+cloud.json
+vendor/
