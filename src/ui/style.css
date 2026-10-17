@@ -1,0 +1,109 @@
+/* Lumen: panel look. Colours come from the libadwaita theme, like Penumbra's. */
+
+window.lm-window, window.lm-scrim { background: transparent; box-shadow: none; }
+
+.lm-panel {
+  background-color: @window_bg_color;
+  color: @window_fg_color;
+  border-radius: 20px;
+  border: 1px solid alpha(@window_fg_color, 0.12);
+  box-shadow: 0 10px 34px alpha(black, 0.5), 0 2px 8px alpha(black, 0.3);
+  min-width: 420px;
+}
+
+.lm-header { padding: 12px 12px 8px 18px; }
+.lm-heading { font-weight: 800; font-size: 1.15em; }
+
+.lm-pill {
+  border-radius: 99px;
+  padding: 2px 12px;
+  min-height: 26px;
+  font-weight: 600;
+  font-size: 0.9em;
+  background-color: alpha(@window_fg_color, 0.08);
+}
+.lm-pill:hover { background-color: alpha(@window_fg_color, 0.14); }
+
+.lm-card {
+  background-color: alpha(@window_fg_color, 0.06);
+  border-radius: 16px;
+  padding: 10px 14px 12px 12px;
+}
+.lm-card.offline .lm-title { opacity: 0.55; }
+.lm-card-head { min-height: 36px; }
+.lm-title { font-weight: 700; }
+.lm-sub { opacity: 0.62; font-size: 0.85em; font-feature-settings: "tnum"; }
+.lm-chevron { opacity: 0.45; }
+.lm-card-head:hover .lm-chevron { opacity: 0.9; }
+
+.lm-section { font-size: 0.72em; font-weight: 800; letter-spacing: 1.2px; opacity: 0.5; }
+.lm-row-icon { opacity: 0.7; }
+.lm-value { font-feature-settings: "tnum"; opacity: 0.75; font-size: 0.9em; }
+
+/* sliders */
+scale.lm-slider trough { min-height: 8px; border-radius: 5px; background-color: alpha(@window_fg_color, 0.14); }
+scale.lm-slider highlight { border-radius: 5px; background-color: @accent_bg_color; }
+scale.lm-slider slider {
+  min-width: 20px; min-height: 20px;
+  background: white; border: none;
+  box-shadow: 0 1px 4px alpha(black, 0.45);
+}
+.lm-big scale.lm-slider trough { min-height: 12px; border-radius: 8px; }
+.lm-big scale.lm-slider highlight {
+  border-radius: 8px;
+  background-image: linear-gradient(to right, alpha(@accent_bg_color, 0.45), @accent_bg_color);
+}
+.lm-big scale.lm-slider slider { min-width: 22px; min-height: 22px; }
+/* white temperature: warm on the left, cool on the right; no fill */
+.lm-ct scale.lm-slider trough {
+  min-height: 12px; border-radius: 8px;
+  background-image: linear-gradient(to right, #ff9b3d, #ffc78a, #ffe8cf, #ffffff, #d6e6ff);
+}
+.lm-ct scale.lm-slider highlight { background: transparent; }
+
+/* tabs */
+.lm-tabs {
+  background-color: alpha(@window_fg_color, 0.07);
+  border-radius: 10px;
+  padding: 3px;
+}
+.lm-tab {
+  border-radius: 8px; min-height: 26px; padding: 0 10px;
+  background: transparent; box-shadow: none; font-weight: 600; font-size: 0.9em;
+}
+.lm-tab:checked { background-color: alpha(@window_fg_color, 0.16); }
+
+/* colour swatches */
+.lm-swatch {
+  min-width: 26px; min-height: 26px; padding: 0;
+  border-radius: 99px;
+  border: 2px solid alpha(@window_fg_color, 0.10);
+  box-shadow: none;
+}
+.lm-swatch:hover { border-color: alpha(@window_fg_color, 0.5); }
+.lm-swatch.active { border: 3px solid @window_fg_color; }
+.lm-hex { font-family: monospace; min-height: 28px; border-radius: 8px; }
+
+/* white presets and scenes */
+.lm-preset, .lm-scene {
+  border-radius: 12px;
+  padding: 6px 4px;
+  background-color: alpha(@window_fg_color, 0.07);
+  box-shadow: none;
+}
+.lm-preset:hover, .lm-scene:hover { background-color: alpha(@window_fg_color, 0.13); }
+.lm-scene.active { background-color: alpha(@accent_bg_color, 0.35); }
+.lm-preset-label { font-size: 0.78em; font-weight: 600; }
+.lm-scene-swatch { min-height: 16px; min-width: 40px; border-radius: 6px; }
+
+.lm-toast {
+  background-color: alpha(@accent_bg_color, 0.85);
+  color: @accent_fg_color;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.lm-toast.error { background-color: alpha(@error_bg_color, 0.9); color: @error_fg_color; }
+
+popover.lm-menu > contents { padding: 4px; border-radius: 12px; }
+popover.lm-menu button { border-radius: 8px; padding: 6px 12px; min-height: 28px; }
+popover.lm-menu checkbutton { padding: 4px 8px; }

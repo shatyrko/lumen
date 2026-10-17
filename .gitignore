@@ -1,5 +1,6 @@
 .venv/
 devices.json
-__pycache__/
 cloud.json
+__pycache__/
 vendor/
+target/
