@@ -365,6 +365,27 @@ pub fn scene(name: &str) -> Option<&'static Scene> {
     SCENES.iter().find(|s| s.name.eq_ignore_ascii_case(name))
 }
 
+/// The running scene per light, between command-line calls (the lights only say "flowing").
+fn scenes_path() -> PathBuf {
+    std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir).join("lumen-scenes.json")
+}
+
+pub fn remember_scene(alias: &str, scene: Option<&str>) {
+    let p = scenes_path();
+    let mut m: serde_json::Map<String, Value> = std::fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    match scene {
+        Some(n) => m.insert(alias.to_string(), json!(n)),
+        None => m.remove(alias),
+    };
+    let _ = std::fs::write(&p, Value::Object(m).to_string());
+}
+
+pub fn remembered_scene(alias: &str) -> Option<String> {
+    let t = std::fs::read_to_string(scenes_path()).ok()?;
+    let m: Value = serde_json::from_str(&t).ok()?;
+    m[alias].as_str().map(String::from)
+}
+
 pub fn config_dir() -> PathBuf {
     directories::BaseDirs::new().map(|d| d.config_dir().join("lumen")).unwrap_or_else(|| PathBuf::from(".lumen"))
 }

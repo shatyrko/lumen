@@ -10,6 +10,9 @@ use lumen::{ipc, ui};
 #[derive(Parser)]
 #[command(name = "lumen", version, about = "Your Xiaomi/Yeelight lights over the local network, no cloud. Run without a command to start the tray app.")]
 struct Cli {
+    /// Print the lights' state as JSON (for the Noctalia bar widget)
+    #[arg(long, global = true)]
+    json: bool,
     #[command(subcommand)]
     command: Option<Cmd>,
 }
@@ -36,6 +39,10 @@ enum Cmd {
     /// A colour: a name (red, orange, amber, yellow, lime, green, mint, cyan, sky, blue,
     /// indigo, violet, magenta, pink, rose, white) or #RRGGBB
     Color { color: String, light: Option<String> },
+    /// Any colour by hue (0-359) and saturation (0-100)
+    Hsv { hue: u16, sat: u8, light: Option<String> },
+    /// White at a brightness and colour temperature together
+    White { bright: u8, kelvin: u16, light: Option<String> },
     /// White presets: reading, computer, focus, relax, night
     Preset { name: String, light: Option<String> },
     /// Scenes: candle, sunrise, sunset, romance, ocean, lava, rainbow, party, police, breathe; or stop
@@ -53,6 +60,8 @@ enum Cmd {
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).format_timestamp_millis().init();
     let cli = Cli::parse();
+    let json = cli.json;
+    let command = |light: Option<String>, make: &dyn Fn(&lumen::hub::View) -> Result<Action, String>| command(light, json, false, make);
     match cli.command.unwrap_or(Cmd::Run) {
         Cmd::Run => ui::run(),
         Cmd::Panel => match ipc::send("Toggle") {
@@ -87,52 +96,57 @@ fn main() -> ExitCode {
             let moved = hub.search(true);
             hub.refresh();
             hub.wait_idle(Duration::from_secs(10));
-            print_status(&hub, None);
-            println!("{moved} light(s) had a new address");
+            print_status(&hub, None, json);
+            if !json {
+                println!("{moved} light(s) had a new address");
+            }
             ExitCode::SUCCESS
         }
         Cmd::Status { light } => {
             let Some(hub) = start() else { return ExitCode::FAILURE };
             hub.refresh();
             hub.wait_idle(Duration::from_secs(10));
-            print_status(&hub, light.as_deref())
+            print_status(&hub, light.as_deref(), json)
         }
-        Cmd::On { light } => command(light, |_| Ok(Action::Power(true))),
-        Cmd::Off { light } => command(light, |_| Ok(Action::Power(false))),
-        Cmd::Toggle { light } => command(light, |_| Ok(Action::Toggle)),
+        Cmd::On { light } => command(light, &|_| Ok(Action::Power(true))),
+        Cmd::Off { light } => command(light, &|_| Ok(Action::Power(false))),
+        Cmd::Toggle { light } => command(light, &|_| Ok(Action::Toggle)),
+        Cmd::Hsv { hue, sat, light } => command(light, &|v| if v.cfg.caps().color { Ok(Action::Hsv(hue % 360, sat.min(100))) } else { Err("has no colour".into()) }),
+        Cmd::White { bright, kelvin, light } => command(light, &|_| Ok(Action::White(bright.clamp(1, 100), kelvin))),
         Cmd::Bright { value, light } => {
             let rel = value.starts_with('+') || value.starts_with('-');
             let n: i32 = match value.trim_start_matches('+').parse() {
                 Ok(n) => n,
                 Err(_) => return fail(&format!("not a brightness: {value}")),
             };
-            command(light, move |v| {
+            // only a relative change needs to read the lights first
+            self::command(light, json, rel, &move |v| {
                 let b = if rel { v.state.bright as i32 + n } else { n };
                 Ok(Action::Bright(b.clamp(1, 100) as u8))
             })
         }
-        Cmd::Temp { kelvin, light } => command(light, move |_| Ok(Action::Ct(kelvin))),
+        Cmd::Temp { kelvin, light } => command(light, &move |_| Ok(Action::Ct(kelvin))),
         Cmd::Color { color, light } => {
             let rgb = lights::color_by_name(&color).or_else(|| ui::panel::parse_hex(&color));
             let Some(rgb) = rgb else {
                 return fail(&format!("not a colour: {color} (a name like blue, or #RRGGBB)"));
             };
-            command(light, move |v| if v.cfg.caps().color { Ok(Action::Rgb(rgb)) } else { Err("has no colour".into()) })
+            command(light, &move |v| if v.cfg.caps().color { Ok(Action::Rgb(rgb)) } else { Err("has no colour".into()) })
         }
         Cmd::Preset { name, light } => {
             let Some(w) = lights::white_by_name(&name) else {
                 return fail(&format!("no preset {name} (have: {})", lights::WHITES.iter().map(|w| w.name.to_lowercase()).collect::<Vec<_>>().join(", ")));
             };
-            command(light, move |_| Ok(Action::White(w.bright, w.ct)))
+            command(light, &move |_| Ok(Action::White(w.bright, w.ct)))
         }
         Cmd::Scene { name, light } => {
             if name == "stop" {
-                return command(light, |_| Ok(Action::StopScene));
+                return command(light, &|_| Ok(Action::StopScene));
             }
             let Some(s) = lights::scene(&name) else {
                 return fail(&format!("no scene {name} (have: {}, stop)", lights::SCENES.iter().map(|s| s.name.to_lowercase()).collect::<Vec<_>>().join(", ")));
             };
-            command(light, move |v| if v.cfg.caps().scenes { Ok(Action::Scene(s.name.into())) } else { Err("has no scenes".into()) })
+            command(light, &move |v| if v.cfg.caps().scenes { Ok(Action::Scene(s.name.into())) } else { Err("has no scenes".into()) })
         }
     }
 }
@@ -153,19 +167,29 @@ fn start() -> Option<Hub> {
 }
 
 /// Run one action on the chosen lights, then print where they are.
-fn command(light: Option<String>, make: impl Fn(&lumen::hub::View) -> Result<Action, String>) -> ExitCode {
+fn command(light: Option<String>, json: bool, needs_state: bool, make: &dyn Fn(&lumen::hub::View) -> Result<Action, String>) -> ExitCode {
     let Some(hub) = start() else { return ExitCode::FAILURE };
     let targets = match hub.resolve(light.as_deref().unwrap_or("all")) {
         Ok(t) => t,
         Err(e) => return fail(&e),
     };
-    // relative changes need the current state first
-    hub.refresh();
-    hub.wait_idle(Duration::from_secs(10));
+    if needs_state {
+        hub.refresh();
+        hub.wait_idle(Duration::from_secs(10));
+    }
     for v in hub.views().iter().filter(|v| targets.contains(&v.cfg.alias)) {
         match make(v) {
-            Ok(a) => hub.act(&v.cfg.alias, a, FADE),
-            Err(e) => println!("{:6} {e}, skipped", v.cfg.alias),
+            Ok(a) => {
+                // the lights do not say which scene runs; remember the one we started
+                match &a {
+                    Action::Scene(n) => lights::remember_scene(&v.cfg.alias, Some(n)),
+                    a if a.slot() == 2 => lights::remember_scene(&v.cfg.alias, None),
+                    _ => {}
+                }
+                hub.act(&v.cfg.alias, a, FADE)
+            }
+            Err(e) if !json => println!("{:6} {e}, skipped", v.cfg.alias),
+            Err(_) => {}
         }
     }
     hub.wait_idle(Duration::from_secs(10));
@@ -175,23 +199,34 @@ fn command(light: Option<String>, make: impl Fn(&lumen::hub::View) -> Result<Act
     if ipc::running() {
         let _ = ipc::send("Refresh");
     }
-    print_status(&hub, light.as_deref())
+    print_status(&hub, light.as_deref(), json)
 }
 
-fn print_status(hub: &Hub, light: Option<&str>) -> ExitCode {
+fn print_status(hub: &Hub, light: Option<&str>, json: bool) -> ExitCode {
     let targets = match hub.resolve(light.unwrap_or("all")) {
         Ok(t) => t,
         Err(e) => return fail(&e),
     };
     let mut ok = true;
-    for v in hub.views().iter().filter(|v| targets.contains(&v.cfg.alias)) {
-        let line = ui::panel::describe(v);
+    let mut rows = Vec::new();
+    for mut v in hub.views().into_iter().filter(|v| targets.contains(&v.cfg.alias)) {
+        if v.state.flowing && v.state.scene.is_none() {
+            v.state.scene = lights::remembered_scene(&v.cfg.alias);
+        }
+        ok &= v.state.online == Some(true);
+        if json {
+            rows.push(view_json(&v));
+            continue;
+        }
+        let line = ui::panel::describe(&v);
         if v.state.online != Some(true) {
-            ok = false;
             println!("{:6} {line} ({})", v.cfg.alias, v.state.error.as_deref().unwrap_or("no answer"));
         } else {
             println!("{:6} {line}", v.cfg.alias);
         }
+    }
+    if json {
+        println!("{}", serde_json::Value::Array(rows));
     }
     hub.shutdown();
     if ok {
@@ -199,6 +234,36 @@ fn print_status(hub: &Hub, light: Option<&str>) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// One light for the bar widget: what it is, what it can do, what it does now.
+fn view_json(v: &lumen::hub::View) -> serde_json::Value {
+    let s = &v.state;
+    let caps = v.cfg.caps();
+    let (r, g, b) = s.shown_rgb();
+    serde_json::json!({
+        "alias": v.cfg.alias,
+        "name": v.cfg.name,
+        "model": v.cfg.model,
+        "ip": v.cfg.ip.to_string(),
+        "online": s.online == Some(true),
+        "error": s.error,
+        "power": s.power,
+        "bright": s.bright,
+        "ct": s.ct,
+        "rgb": format!("#{:06x}", s.rgb),
+        "hue": s.hue,
+        "sat": s.sat,
+        "mode": match s.mode { lights::Mode::Color => "color", lights::Mode::Hsv => "hsv", lights::Mode::White => "white" },
+        "flowing": s.flowing,
+        "scene": s.scene,
+        "shown": format!("#{:06x}", lights::join(r, g, b)),
+        "describe": ui::panel::describe(v),
+        "can_color": caps.color,
+        "can_scenes": caps.scenes,
+        "ct_min": caps.ct_min,
+        "ct_max": caps.ct_max,
+    })
 }
 
 fn import(file: &str) -> ExitCode {

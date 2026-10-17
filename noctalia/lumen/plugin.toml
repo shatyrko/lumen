@@ -1,0 +1,27 @@
+id          = "alecsh/lumen"
+name        = "Lumen"
+version     = "1.0.0"
+plugin_api  = 24          # runAsync with an argument array
+author      = "alecsh"
+license     = "MIT"
+icon        = "bulb"
+description = "Xiaomi/Yeelight lights over the local network (no cloud): bulb icon in the bar (filled when a light is on); click for a menu with every light (switch, brightness; colour presets, any colour, white temperature and presets, scenes); scroll = brightness of the lights that are on; middle click = all on/off. Backend: ~/.local/bin/lumen (~/Projects/lumen)."
+dependencies = []
+
+# bar icon; click opens the menu
+[[widget]]
+id    = "button"
+entry = "widget.luau"
+
+  [widget.actions]
+  middle = "none"   # free the middle button for onMiddleClick (all lights on/off)
+
+# the menu, attached to the bar right under the icon
+[[panel]]
+id              = "menu"
+entry           = "panel.luau"
+width           = 440
+height          = 420     # set from the content by panel.setHeight (kit patch plugin-panel-height)
+placement       = "attached"
+open_near_click = true
+preload         = true    # script runs at startup: panel.setHeight counts on the first open too

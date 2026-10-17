@@ -1,7 +1,22 @@
 # Lumen
 
-Your Xiaomi/Yeelight lights from the tray, over the local network only: no Mi Home app, no
-cloud, answers in 10-30 ms.
+Your Xiaomi/Yeelight lights from the Noctalia bar (or a tray icon), over the local network only:
+no Mi Home app, no cloud, answers in 10-30 ms.
+
+## Noctalia bar widget (the main way since 2026-10-18)
+
+`noctalia/lumen` is a Noctalia plugin (`alecsh/lumen`): a bulb icon in the bar (filled while a
+light is on), click for a menu drawn by Noctalia itself with the same controls as the panel
+below (Colour: 16 presets + Noctalia's colour picker; White; Scenes), scroll for brightness,
+middle click for all on/off. It runs `~/.local/bin/lumen --json ...` for every change.
+
+```
+cp noctalia/lumen/* ~/.local/share/noctalia/plugins/lumen/
+noctalia msg plugins enable alecsh/lumen
+# ~/.config/noctalia/config.toml: [widget.lumen] type = "alecsh/lumen:button", and "lumen" in a bar list
+```
+
+## Tray app (the first version; not started at login any more)
 
 - **Panel** (click the tray bulb): every light with its switch and brightness; open a card for
   - **Colour** (bulb, strip): colour wheel (drag), 16 colour presets, `#RRGGBB`
@@ -19,11 +34,13 @@ cloud, answers in 10-30 ms.
 ```
 lumen                       start the tray app
 lumen panel                 open/close the panel (for a keyboard shortcut)
-lumen status
+lumen status [--json]
 lumen on|off|toggle [LIGHT]          LIGHT = desk, bulb, strip, a comma list; default all
 lumen bright 40|+10|-10 [LIGHT]
 lumen temp 3000 [LIGHT]
 lumen color blue|#ff8800 [LIGHT]
+lumen hsv 280 90 [LIGHT]             any colour by hue and saturation
+lumen white 60 4500 [LIGHT]          brightness and temperature together
 lumen preset reading|computer|focus|relax|night [LIGHT]
 lumen scene candle|...|stop [LIGHT]
 lumen search                look for the lights again
