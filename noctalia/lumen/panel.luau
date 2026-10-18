@@ -20,7 +20,12 @@ local render
 local CARD = { gap = 8, padding = 12, radius = 12, fill = "surface_variant", align = "stretch" }
 
 -- ----- sizes (logical px), for panel.setHeight -----
-local H = { pad = 12, header = 34, gap = 10, card = 98, offline = 40, tabs = 44, colour = 108, white = 104, scenes = 142, stop = 38 }
+-- Attached panels keep the height they opened with (the kit patch: "can't resize while open"),
+-- so the menu has ONE height: every card closed, plus the tallest part a card can open to. One
+-- card is always open; a shorter one leaves a little room at the bottom. The content also sits in
+-- a scroll area, so a wrong number here means a scrollbar, never a cut-off menu.
+-- measured on screen (2026-10-18); host = Noctalia's own padding around a plugin panel
+local H = { pad = 12, header = 34, gap = 10, card = 108, offline = 44, tabs = 47, colour = 120, white = 116, scenes = 106, stop = 40, host = 64 }
 
 local function find(alias)
     for _, l in ipairs(lights) do
@@ -36,22 +41,23 @@ local function tabFor(l)
     return "white"
 end
 
+-- the most a light's open part can take, over all its tabs
+local function openExtra(l)
+    local most = H.white
+    if l.can_color then most = math.max(most, H.colour) end
+    if l.can_scenes then most = math.max(most, H.scenes + H.stop) end
+    return most + ((l.can_color or l.can_scenes) and H.tabs or 0)
+end
+
 local function height()
     local h = H.pad * 2 + H.header
+    local extra = 0
     for _, l in ipairs(lights) do
         h += H.gap + H.card
-        if not l.online then
-            h += H.offline
-        elseif l.alias == openAlias then
-            if l.can_color or l.can_scenes then h += H.tabs end
-            local t = tabFor(l)
-            if t == "colour" then h += H.colour
-            elseif t == "scenes" then h += H.scenes + (l.flowing and H.stop or 0)
-            else h += H.white end
-        end
+        extra = math.max(extra, l.online and openExtra(l) or H.offline)
     end
-    if #lights == 0 then h += 60 end
-    return h
+    if #lights == 0 then return 420 end
+    return h + extra + H.host
 end
 
 local lastHeight = 0
@@ -150,17 +156,16 @@ end
 
 local function whitePage(l)
     local ct = math.clamp(l.ct or 4000, l.ct_min, l.ct_max)
+    -- presets as small tiles (icon over name), like the scene tiles: five buttons with text do not fit
     local presets = {}
     for _, w in ipairs(g.WHITES) do
         local k = math.clamp(w.ct, l.ct_min, l.ct_max)
         local current = l.mode == "white" and not l.flowing and l.bright == w.bright and l.ct == k
-        table.insert(presets, ui.button({
+        table.insert(presets, ui.column({
             key = `wp-{l.alias}-{w.name}`,
-            glyph = w.glyph, text = w.name,
-            variant = current and "primary" or "outline",
-            selected = current,
-            controlSize = "sm",
-            flexGrow = 1,
+            gap = 3, paddingV = 6, paddingH = 2, radius = 10, flexGrow = 1, align = "center",
+            fill = current and "primary/0.35" or "surface",
+            border = current and "primary" or "outline/0.3", borderWidth = 1,
             tooltip = `{w.bright} %, {k} K`,
             onClick = function()
                 act(l, "white", { "white", w.bright, k, l.alias }, function(x)
@@ -168,13 +173,16 @@ local function whitePage(l)
                     x.describe = `On · {w.bright}% · {w.name}`
                 end)
             end,
+        }, {
+            ui.glyph({ name = w.glyph, size = 16 }),
+            ui.label({ text = w.name, fontSize = 11, maxLines = 1 }),
         }))
     end
     return ui.column({ key = `white-{l.alias}`, gap = 10, align = "stretch" }, {
         ui.row({ key = `ct-{l.alias}`, gap = 8, align = "center", paddingH = 2 }, {
             ui.glyph({ name = "temperature-sun", size = 16, color = "#ff9b3d" }),
             ui.slider({
-                key = `cts-{l.alias}`, min = l.ct_min, max = l.ct_max, step = 50, value = ct, flexGrow = 1,
+                key = `cts-{l.alias}`, min = l.ct_min, max = l.ct_max, step = 50, value = ct, width = 180, flexGrow = 1,
                 onChange = function(v)
                     local k = math.floor(tonumber(v) or ct)
                     if k == l.ct and l.mode == "white" then return end
@@ -184,10 +192,9 @@ local function whitePage(l)
                     end)
                 end,
             }),
-            ui.glyph({ name = "temperature-snow", size = 16, color = "#9cc4ff" }),
-            ui.label({ text = `{ct} K`, width = 58, color = "on_surface_variant" }),
+            ui.label({ text = `{ct} K`, width = 60, textAlign = "end", color = "on_surface_variant" }),
         }),
-        ui.row({ key = `wps-{l.alias}`, gap = 4, align = "stretch" }, presets),
+        ui.row({ key = `wps-{l.alias}`, gap = 6, align = "stretch" }, presets),
     })
 end
 
@@ -246,11 +253,12 @@ local function card(l)
             ui.label({ text = l.describe, color = "on_surface_variant", fontSize = 12, maxLines = 1 }),
         }),
         ui.button({
-            key = `chev-{l.alias}`, glyph = isOpenCard and "chevron-up" or "chevron-down", variant = "ghost", controlSize = "sm",
+            key = `chev-{l.alias}`, glyph = "chevron-down", variant = "ghost", controlSize = "sm",
             enabled = l.online,
-            tooltip = isOpenCard and "Fewer controls" or "Colour, white and scenes",
+            visible = not isOpenCard,
+            tooltip = "Colour, white and scenes",
             onClick = function()
-                openAlias = (openAlias == l.alias) and nil or l.alias
+                openAlias = l.alias
                 render()
             end,
         }),
@@ -269,7 +277,7 @@ local function card(l)
     table.insert(items, ui.row({ key = `br-{l.alias}`, gap = 8, align = "center", paddingH = 2 }, {
         ui.glyph({ name = "brightness-down", size = 16, color = "on_surface_variant" }),
         ui.slider({
-            key = `brs-{l.alias}`, min = 1, max = 100, step = 1, value = l.bright or 50, flexGrow = 1, enabled = l.online,
+            key = `brs-{l.alias}`, min = 1, max = 100, step = 1, value = l.bright or 50, width = 180, flexGrow = 1, enabled = l.online,
             onChange = function(v)
                 local b = math.floor(tonumber(v) or l.bright)
                 if b == l.bright and l.power then return end
@@ -278,7 +286,7 @@ local function card(l)
                 end)
             end,
         }),
-        ui.label({ text = `{l.bright or 0} %`, width = 52, color = "on_surface_variant" }),
+        ui.label({ text = `{l.bright or 0} %`, width = 60, textAlign = "end", color = "on_surface_variant" }),
     }))
     if not l.online then
         table.insert(items, ui.row({ key = `off-{l.alias}`, gap = 8, align = "center" }, {
@@ -358,21 +366,33 @@ render = function()
         table.insert(rows, card(l))
     end
     setHeight()
-    panel.render(ui.column({ gap = H.gap, padding = H.pad, align = "stretch" }, rows))
+    panel.render(ui.scroll({ key = "scroll", flexGrow = 1 }, {
+        ui.column({ key = "content", gap = H.gap, padding = H.pad, align = "stretch" }, rows),
+    }))
 end
 
 local function apply(v)
     if type(v) ~= "table" then return end
     lights = v
-    if openAlias == nil and #lights > 0 then
+    if (openAlias == nil or find(openAlias) == nil) and #lights > 0 then
         openAlias = lights[1].alias
     end
     if isOpen then render() else setHeight() end
 end
 
-function onOpen(_context)
+function onOpen(context)
     isOpen = true
     tabOf = {}        -- each open starts on the tab that matches what the light does
+    -- `noctalia msg panel-open alecsh/lumen:menu strip` or `... strip:scenes` opens that card (and tab)
+    if type(context) == "string" then
+        local alias, tab = string.match(context, "^([%w_-]+):?(%a*)$")
+        if alias and find(alias) ~= nil then
+            openAlias = alias
+            if tab == "colour" or tab == "white" or tab == "scenes" then
+                tabOf = { [alias] = tab }
+            end
+        end
+    end
     render()
     g.refresh()
 end
