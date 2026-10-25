@@ -370,8 +370,11 @@ render = function()
     setHeight()
     local content = ui.column({ key = "content", gap = H.gap, padding = H.pad, align = "stretch" }, rows)
     if height() > box.room() then
-        -- explicit height: Noctalia's scroll view keeps its old viewport when a dropdown grows
-        panel.render(ui.scroll({ key = "scroll", height = (box.height() or box.room()) - H.host }, { content }))
+        -- the scroll view fills a box of explicit height (following the panel while it glides); `height` on
+        -- the scroll view itself makes Noctalia lay it out at its whole content's height: no scrolling
+        panel.render(ui.column({ key = "scroll-box", height = (box.height() or box.room()) - H.host, align = "stretch" }, {
+            ui.scroll({ key = "scroll", flexGrow = 1 }, { content }),
+        }))
     else
         panel.render(content)
     end
