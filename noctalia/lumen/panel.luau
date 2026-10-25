@@ -9,6 +9,8 @@
 -- Every change shows at once and is sent by ~/.local/bin/lumen in the background; what the
 -- lights answer replaces the guess.
 local g = require("./common.luau")
+local fit = require("./fit.luau")
+local box = fit.new({ min = 160 })
 
 local lights = {}
 local openAlias = nil        -- the card that shows its colour / white / scene controls
@@ -20,12 +22,12 @@ local render
 local CARD = { gap = 8, padding = 12, radius = 12, fill = "surface_variant", align = "stretch" }
 
 -- ----- sizes (logical px), for panel.setHeight -----
--- Attached panels keep the height they opened with (the kit patch: "can't resize while open"),
--- so the menu has ONE height: every card closed, plus the tallest part a card can open to. One
--- card is always open; a shorter one leaves a little room at the bottom. The content also sits in
--- a scroll area, so a wrong number here means a scrollbar, never a cut-off menu.
--- measured on screen (2026-10-18); host = Noctalia's own padding around a plugin panel
-local H = { pad = 12, header = 34, gap = 10, card = 108, offline = 44, tabs = 47, colour = 120, white = 116, scenes = 106, stop = 40, host = 64 }
+-- The menu is as tall as what it shows: the closed cards, the open card's current tab, a line per light
+-- that is offline; a tab change or another card glides to the new height (fit.luau, kit patches
+-- plugin-panel-height + plugin-panel-live-height). It scrolls only if that would not fit the screen.
+-- measured on screen (2026-10-18, white + host again 2026-10-25: 24 px under the last card, as at the sides);
+-- host = Noctalia's own padding around a plugin panel
+local H = { pad = 12, header = 34, gap = 10, card = 108, offline = 44, tabs = 47, colour = 126, white = 108, scenes = 106, stop = 40, host = 24 }
 
 local function find(alias)
     for _, l in ipairs(lights) do
@@ -41,33 +43,33 @@ local function tabFor(l)
     return "white"
 end
 
--- the most a light's open part can take, over all its tabs
-local function openExtra(l)
-    local most = H.white
-    if l.can_color then most = math.max(most, H.colour) end
-    if l.can_scenes then most = math.max(most, H.scenes + H.stop) end
-    return most + ((l.can_color or l.can_scenes) and H.tabs or 0)
+-- what a light's card adds below its brightness row right now
+local function extraOf(l)
+    if not l.online then return H.offline end
+    if openAlias ~= l.alias then return 0 end
+    local t = tabFor(l)
+    local h = (l.can_color or l.can_scenes) and H.tabs or 0
+    if t == "colour" then return h + H.colour end
+    if t == "scenes" then return h + H.scenes + (l.flowing and H.stop or 0) end
+    return h + H.white
 end
 
 local function height()
-    local h = H.pad * 2 + H.header
-    local extra = 0
+    if #lights == 0 then return 160 end
+    local h = H.pad * 2 + H.header + H.host
     for _, l in ipairs(lights) do
-        h += H.gap + H.card
-        extra = math.max(extra, l.online and openExtra(l) or H.offline)
+        h += H.gap + H.card + extraOf(l)
     end
-    if #lights == 0 then return 420 end
-    return h + extra + H.host
+    return h
 end
 
-local lastHeight = 0
+-- closed (preload): the next open starts at the right height; open: glide there
 local function setHeight()
-    if panel.setHeight then
-        local h = height()
-        if h ~= lastHeight then
-            lastHeight = h
-            panel.setHeight(h)
-        end
+    if isOpen then
+        box.fit(height())
+    elseif panel.setHeight then
+        box.reset()
+        panel.setHeight(height())
     end
 end
 
@@ -366,9 +368,18 @@ render = function()
         table.insert(rows, card(l))
     end
     setHeight()
-    panel.render(ui.scroll({ key = "scroll", flexGrow = 1 }, {
-        ui.column({ key = "content", gap = H.gap, padding = H.pad, align = "stretch" }, rows),
-    }))
+    local content = ui.column({ key = "content", gap = H.gap, padding = H.pad, align = "stretch" }, rows)
+    if height() > box.room() then
+        -- explicit height: Noctalia's scroll view keeps its old viewport when a dropdown grows
+        panel.render(ui.scroll({ key = "scroll", height = (box.height() or box.room()) - H.host }, { content }))
+    else
+        panel.render(content)
+    end
+end
+
+function onFrameTick(dt)
+    if not box.tick(dt) then panel.setNeedsFrameTick(false) end
+    render()
 end
 
 local function apply(v)
@@ -399,6 +410,7 @@ end
 
 function onClose()
     isOpen = false
+    setHeight()
 end
 
 -- while open, read the lights every 3 s (changes from Mi Home or a wall switch)

@@ -9,6 +9,9 @@ no Mi Home app, no cloud, answers in 10-30 ms.
 light is on), click for a menu drawn by Noctalia itself with the same controls as the panel
 below (Colour: 16 presets + Noctalia's colour picker; White; Scenes), scroll for brightness,
 middle click for all on/off. It runs `~/.local/bin/lumen --json ...` for every change.
+The menu is as tall as what it shows and glides to the new height when a card or tab changes
+(`fit.luau`); that needs a Noctalia with `panel.setHeight` for open panels (the arch-setup kit's
+patches `plugin-panel-height` + `plugin-panel-live-height`), otherwise it keeps `plugin.toml`'s height.
 
 ```
 cp noctalia/lumen/* ~/.local/share/noctalia/plugins/lumen/
